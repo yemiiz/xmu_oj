@@ -93,20 +93,21 @@ ListNode *oddEvenList(ListNode *head)
     if (head == NULL || head->next == NULL)
         return head;
 
-    ListNode *odd = head;          
-    ListNode *even = head->next;   
+    ListNode *odd = head;         // 1, 3, 5, ... 
+    ListNode *even = head->next;   // 2, 4, 6, ...
+    //分成两个部分最后奇数的尾接偶数的头
     ListNode *evenHead = even;     
 
     while (even != NULL && even->next != NULL)
     {
-        odd->next = even->next;    
-        odd = odd->next;           
+        odd->next = even->next;   //1->3->5    
+        odd = odd->next;          //odd变为2准备接下一个奇数3
 
-        even->next = odd->next;    
-        even = even->next;        
+        even->next = odd->next;   //2->4->6
+        even = even->next;        //even变为3准备接下一个偶数4
     }
 
-    odd->next = evenHead;
+    odd->next = evenHead;         // 5->2  
 
     return head;
 }
