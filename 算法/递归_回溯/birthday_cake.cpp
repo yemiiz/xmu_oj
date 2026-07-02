@@ -3,102 +3,108 @@
 #include <algorithm>
 using namespace std;
 
-int V, N;
-int best = 1e9;
+int V, N, best;
 
-// min_vol[k]: minimum volume for top k layers (used for pruning)
-// min_vol[k] = Σ i³ for i=1..k  (r=i, h=i for the i-th layer from top)
+// min_vol[k] = minimal volume for top k layers: Σ i³ (i=1..k)
 int min_vol[25];
 
 void init() {
     min_vol[0] = 0;
-    for (int i = 1; i <= 20; i++) {
+    for (int i = 1; i <= 20; i++)
         min_vol[i] = min_vol[i-1] + i * i * i;
-    }
 }
 
-// Compute maximum volume achievable with k layers,
-// given max radius start_r and max height start_h for the bottom-most of these k layers
-int max_possible_vol(int start_r, int start_h, int k) {
+// Maximum volume achievable with k upper layers,
+// given max radius `r` and max height `h` for the lowest of those k layers.
+inline int max_vol_upper(int r, int h, int k) {
     int total = 0;
-    for (int i = 1; i <= k; i++) {
-        int nr = start_r - i + 1;
-        int nh = start_h - i + 1;
-        if (nr <= 0 || nh <= 0) break;
-        total += nr * nr * nh;
+    for (int i = 1; i <= k; i++, r--, h--) {
+        if (r <= 0 || h <= 0) break;
+        total += r * r * h;
     }
     return total;
 }
 
-void dfs(int layers_left, int remaining_vol, int cur_area, int prev_r, int prev_h) {
-    // All layers built
-    if (layers_left == 0) {
-        if (remaining_vol == 0) best = min(best, cur_area);
+void dfs(int layer, int remV, int area, int prev_r, int prev_h) {
+    if (layer == 0) {
+        if (remV == 0) best = min(best, area);
         return;
     }
 
-    // ---- Pruning ----
+    // ===== Pruning =====
 
-    // [Prune 1] Volume too small for remaining layers
-    if (remaining_vol < min_vol[layers_left]) return;
+    // [P1] Remaining volume too small for the minimum-possible layers
+    if (remV < min_vol[layer]) return;
 
-    // [Prune 2] Current area already exceeds best
-    if (cur_area >= best) return;
+    // [P2] Already worse than best found
+    if (area >= best) return;
 
-    // ---- Try radius and height for the current (bottom-most remaining) layer ----
+    // [P3] ★ Future-side lower bound ★
+    // Side = 2*vol/r. Future layers have r ≤ prev_r-1 < prev_r,
+    // so each vol unit contributes ≥ 2/prev_r area.
+    // Total future side area ≥ 2 * remV / prev_r.
+    if (area + 2 * remV / prev_r >= best) return;
 
-    // Max radius: bounded by sqrt(remaining_vol) and the layer below
-    int max_r = min(prev_r - 1, (int)sqrt(remaining_vol));
+    // Max radius: tightly bounded by volume + minimum layer count
+    // r² * h + min_vol[upper] ≤ remV, with h ≥ layer → r² * layer ≤ remV - min_vol[layer-1]
+    int max_r = (int)sqrt((remV - min_vol[layer - 1]) / layer);
+    max_r = min(max_r, prev_r - 1);
+    if (max_r < layer) return;
 
-    for (int r = max_r; r >= layers_left; r--) {
-        // Max height for this radius:
-        // r² * h + min_vol[upper] ≤ remaining_vol
-        // → h ≤ (remaining_vol - min_vol[layers_left-1]) / r²
+    for (int r = max_r; r >= layer; r--) {
         int max_h = min(prev_h - 1,
-                        (remaining_vol - min_vol[layers_left - 1]) / (r * r));
-        if (max_h < layers_left) continue;
+                        (remV - min_vol[layer - 1]) / (r * r));
+        if (max_h < layer) continue;
 
-        for (int h = max_h; h >= layers_left; h--) {
-            int vol = r * r * h;
-            int rem = remaining_vol - vol;
+        for (int h = max_h; h >= layer; h--) {
+            int vol  = r * r * h;
+            int left = remV - vol;
 
-            // [Prune 3] Upper layers can't hold the remaining volume
-            if (rem < min_vol[layers_left - 1]) continue;
+            // [P4] Upper layers: remaining volume too small
+            if (left < min_vol[layer - 1]) continue;
 
-            // [Prune 4] Upper layers can't hold the remaining volume (too much)
-            int max_vol_upper = max_possible_vol(r - 1, h - 1, layers_left - 1);
-            if (rem > max_vol_upper) continue;
+            // [P5] Upper layers: remaining volume too large
+            if (left > max_vol_upper(r - 1, h - 1, layer - 1)) continue;
 
-            // Compute new surface area
-            int new_area = cur_area + 2 * r * h;
-            if (layers_left == N) new_area += r * r; // bottom area of layer 1
+            int new_area = area + 2 * r * h;
+            // Bottom layer: add the base area
+            if (layer == N) new_area += r * r;
 
             if (new_area >= best) continue;
 
-            // [Prune 5] Optimal-case future area bound
-            // For remaining volume rem, the absolute minimum side area
-            // is achieved with the largest possible radius (r-1):
-            // min_future_area ≥ 2 * rem / (r-1)
-            // Since side = 2*vol/r, and max r for remaining = r-1
-            if (r > 1) {
-                int min_future = 2 * rem / r;
-                if (new_area + min_future >= best) continue;
-            }
+            // [P6] Even with the best possible packing of remaining volume
+            // (i.e. all in one cylinder with max radius r-1), can't beat best
+            if (r > 1 && new_area + 2 * left / (r - 1) >= best) continue;
 
-            dfs(layers_left - 1, rem, new_area, r, h);
+            dfs(layer - 1, left, new_area, r, h);
         }
     }
 }
 
 int main() {
+    ios::sync_with_stdio(false);
+    cin.tie(nullptr);
+
     init();
     cin >> V >> N;
 
-    // Initial call with INF bounds
-    dfs(N, V, 0, (int)sqrt(V) + 1, V + 1);
+    // Quick check: impossible?
+    if (V < min_vol[N]) {
+        cout << "0\n";
+        return 0;
+    }
 
-    if (best == (int)1e9) cout << 0 << endl;
-    else cout << best << endl;
+    best = 1e9;  // will be tightened by the first feasible solution
 
+    // For N=1 only, compute a tighter start bound
+    if (N == 1) {
+        for (int r0 = 1; r0 * r0 <= V; r0++)
+            if (V % (r0 * r0) == 0)
+                best = min(best, r0 * r0 + 2 * r0 * (V / (r0 * r0)));
+    }
+
+    dfs(N, V, 0, (int)sqrt(V) + 2, V + 2);
+
+    cout << (best == (int)1e9 ? 0 : best) << "\n";
     return 0;
 }
